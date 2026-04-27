@@ -34,6 +34,26 @@ Data Ingestion → ETL Pipeline → Product Clustering → Demand Forecasting �
                                        └──────────────┘    └──────────────┘
 ```
 
+## Dashboard Screenshots
+
+### Pipeline Overview
+![Pipeline Overview](docs/screenshots/01_overview.png)
+
+### Demand Forecasting
+![Demand Forecast](docs/screenshots/02_forecast_chart.png)
+
+![Forecast Metrics & Table](docs/screenshots/03_forecast_metrics.png)
+
+### Inventory Optimization (Linear Programming)
+![Inventory Optimization](docs/screenshots/04_optimization.png)
+
+![Cost Distribution](docs/screenshots/05_cost_distribution.png)
+
+### Product Clustering
+![Product Clusters](docs/screenshots/06_clusters.png)
+
+![Cluster Composition](docs/screenshots/07_cluster_composition.png)
+
 ## Key Components
 
 ### 1. ETL Pipeline (`src/etl/`)
