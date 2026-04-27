@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mro-config
+  labels:
+    app: mro-optimizer
+data:
+  s3-bucket: "mro-demand-optimizer"
+  aws-region: "us-east-1"
+  forecast-horizon: "30"
+  service-level: "0.95"
+  warehouse-capacity: "100000"

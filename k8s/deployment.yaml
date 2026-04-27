@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mro-api
+  labels:
+    app: mro-optimizer
+    component: api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mro-optimizer
+      component: api
+  template:
+    metadata:
+      labels:
+        app: mro-optimizer
+        component: api
+    spec:
+      containers:
+        - name: api
+          image: mro-demand-optimizer:latest
+          command: ["uvicorn", "src.serving.api:app", "--host", "0.0.0.0", "--port", "8000"]
+          ports:
+            - containerPort: 8000
+          env:
+            - name: USE_S3
+              value: "true"
+            - name: MRO_S3_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: mro-config
+                  key: s3-bucket
+            - name: AWS_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: mro-config
+                  key: aws-region
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mro-dashboard
+  labels:
+    app: mro-optimizer
+    component: dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mro-optimizer
+      component: dashboard
+  template:
+    metadata:
+      labels:
+        app: mro-optimizer
+        component: dashboard
+    spec:
+      containers:
+        - name: dashboard
+          image: mro-demand-optimizer:latest
+          command: ["streamlit", "run", "src/serving/dashboard.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
+          ports:
+            - containerPort: 8501
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"

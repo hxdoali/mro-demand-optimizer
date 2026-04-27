@@ -16,8 +16,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from src.etl.ingest import load_pandas
 from src.etl.cluster import cluster_products, get_cluster_embeddings
-from src.models.forecaster import forecast_sku, get_forecast_summary
+from src.models.forecaster import forecast_sku
 from src.models.optimizer import compute_demand_stats, optimize_inventory_lp
+from src.models.lstm_forecaster import forecast_sku_lstm
+from src.etl.queries import DemandQueryEngine
 from src.utils.metrics import forecast_summary
 
 DATA_DIR = "data/synthetic"
@@ -62,31 +64,63 @@ def render_overview(catalog: pd.DataFrame, demand: pd.DataFrame):
 def render_forecast_tab(catalog: pd.DataFrame, demand: pd.DataFrame):
     st.header("Demand Forecasting")
 
-    col1, col2 = st.columns([1, 3])
+    col1, col2, col3 = st.columns([1, 1, 2])
     with col1:
         selected_sku = st.selectbox("Select SKU", catalog["sku_id"].tolist())
+    with col2:
         horizon = st.slider("Forecast Horizon (days)", 7, 90, 30)
 
-    with st.spinner(f"Training forecast model for {selected_sku}..."):
-        result = forecast_sku(demand, selected_sku, horizon_days=horizon)
-
-    fc = result["forecast"]
-    train = result["train"]
-    train_end = train["ds"].max()
+    model_choice = st.radio("Model", ["Prophet", "PyTorch LSTM", "Compare Both"], horizontal=True)
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=train["ds"], y=train["y"], mode="lines",
-                             name="Historical", line=dict(color="#636EFA")))
 
-    future = fc[fc["ds"] > train_end]
-    fig.add_trace(go.Scatter(x=future["ds"], y=future["yhat"], mode="lines",
-                             name="Forecast", line=dict(color="#EF553B")))
+    sku_history = demand[demand["sku_id"] == selected_sku].sort_values("date")
     fig.add_trace(go.Scatter(
-        x=pd.concat([future["ds"], future["ds"][::-1]]),
-        y=pd.concat([future["yhat_upper"], future["yhat_lower"][::-1]]),
-        fill="toself", fillcolor="rgba(239,85,59,0.15)",
-        line=dict(width=0), name="Confidence Interval",
+        x=pd.to_datetime(sku_history["date"]), y=sku_history["demand"],
+        mode="lines", name="Historical", line=dict(color="#636EFA"),
     ))
+
+    prophet_metrics = None
+    lstm_metrics = None
+
+    if model_choice in ("Prophet", "Compare Both"):
+        with st.spinner("Training Prophet model..."):
+            result = forecast_sku(demand, selected_sku, horizon_days=horizon)
+        fc = result["forecast"]
+        train_end = result["train"]["ds"].max()
+        future = fc[fc["ds"] > train_end]
+        fig.add_trace(go.Scatter(x=future["ds"], y=future["yhat"], mode="lines",
+                                 name="Prophet", line=dict(color="#EF553B")))
+        fig.add_trace(go.Scatter(
+            x=pd.concat([future["ds"], future["ds"][::-1]]),
+            y=pd.concat([future["yhat_upper"], future["yhat_lower"][::-1]]),
+            fill="toself", fillcolor="rgba(239,85,59,0.1)",
+            line=dict(width=0), name="Prophet CI", showlegend=False,
+        ))
+        if len(result["test"]) > 0:
+            test = result["test"]
+            test_fc = fc[fc["ds"].isin(test["ds"])]
+            if len(test_fc) > 0:
+                merged = test.merge(test_fc[["ds", "yhat"]], on="ds")
+                prophet_metrics = forecast_summary(merged["y"], merged["yhat"])
+
+    if model_choice in ("PyTorch LSTM", "Compare Both"):
+        with st.spinner("Training PyTorch LSTM model..."):
+            lstm_result = forecast_sku_lstm(demand, selected_sku, horizon_days=horizon, epochs=30)
+        lstm_fc = lstm_result["forecast"]
+        fig.add_trace(go.Scatter(
+            x=pd.to_datetime(lstm_fc["date"]), y=lstm_fc["predicted_demand"],
+            mode="lines", name="LSTM (PyTorch)", line=dict(color="#00CC96", dash="dash"),
+        ))
+        test_actual = lstm_result["test_actual"]
+        if len(test_actual) > 0:
+            preds = lstm_fc["predicted_demand"].values[:len(test_actual)]
+            from src.utils.metrics import mape, rmse
+            lstm_metrics = {
+                "mape": round(mape(test_actual, preds.astype(float)), 2),
+                "rmse": round(rmse(test_actual, preds.astype(float)), 2),
+                "n_periods": len(test_actual),
+            }
 
     fig.update_layout(
         xaxis_title="Date", yaxis_title="Daily Demand (units)",
@@ -94,20 +128,25 @@ def render_forecast_tab(catalog: pd.DataFrame, demand: pd.DataFrame):
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    if len(result["test"]) > 0:
-        test = result["test"]
-        test_fc = fc[fc["ds"].isin(test["ds"])]
-        if len(test_fc) > 0:
-            merged = test.merge(test_fc[["ds", "yhat"]], on="ds")
-            metrics = forecast_summary(merged["y"], merged["yhat"])
+    if prophet_metrics or lstm_metrics:
+        st.subheader("Model Comparison")
+        if model_choice == "Compare Both" and prophet_metrics and lstm_metrics:
+            comp = pd.DataFrame({
+                "Metric": ["MAPE (%)", "RMSE", "Test Periods"],
+                "Prophet": [prophet_metrics["mape"], prophet_metrics["rmse"], prophet_metrics["n_periods"]],
+                "LSTM (PyTorch)": [lstm_metrics["mape"], lstm_metrics["rmse"], lstm_metrics["n_periods"]],
+            })
+            st.dataframe(comp, use_container_width=True, hide_index=True)
+        elif prophet_metrics:
             mc1, mc2, mc3 = st.columns(3)
-            mc1.metric("MAPE", f"{metrics['mape']}%")
-            mc2.metric("RMSE", f"{metrics['rmse']}")
-            mc3.metric("Test Periods", metrics["n_periods"])
-
-    summary = get_forecast_summary(result)
-    st.subheader("Forecast Table")
-    st.dataframe(summary[["date", "predicted_demand", "lower_bound", "upper_bound"]], use_container_width=True)
+            mc1.metric("MAPE", f"{prophet_metrics['mape']}%")
+            mc2.metric("RMSE", f"{prophet_metrics['rmse']}")
+            mc3.metric("Test Periods", prophet_metrics["n_periods"])
+        elif lstm_metrics:
+            mc1, mc2, mc3 = st.columns(3)
+            mc1.metric("MAPE", f"{lstm_metrics['mape']}%")
+            mc2.metric("RMSE", f"{lstm_metrics['rmse']}")
+            mc3.metric("Test Periods", lstm_metrics["n_periods"])
 
 
 def render_optimization_tab(catalog: pd.DataFrame, demand: pd.DataFrame):
@@ -179,11 +218,52 @@ def render_cluster_tab(catalog: pd.DataFrame):
     st.plotly_chart(fig2, use_container_width=True)
 
 
+def render_sql_tab():
+    st.header("SQL Analytics")
+    st.caption("Live queries powered by DuckDB over parquet-backed demand data")
+
+    engine = DemandQueryEngine(DATA_DIR)
+
+    query_options = {
+        "Top SKUs by Volume": "top_skus_by_volume",
+        "Monthly Demand Summary": "monthly_demand_summary",
+        "Category Performance": "category_performance",
+        "High-Volatility SKUs": "demand_volatility",
+        "Weekend vs Weekday": "weekend_vs_weekday",
+        "Stockout Risk SKUs": "stockout_risk_skus",
+    }
+
+    selected = st.selectbox("Select Query", list(query_options.keys()))
+
+    with st.spinner("Running SQL query..."):
+        result = getattr(engine, query_options[selected])()
+
+    st.dataframe(result, use_container_width=True)
+    st.metric("Rows Returned", len(result))
+
+    st.subheader("Custom SQL")
+    custom_sql = st.text_area(
+        "Write your own query (tables: `demand`, `catalog`)",
+        value="SELECT sku_id, SUM(demand) AS total\nFROM demand\nGROUP BY sku_id\nORDER BY total DESC\nLIMIT 5",
+        height=120,
+    )
+    if st.button("Run Query"):
+        try:
+            custom_result = engine.query(custom_sql)
+            st.dataframe(custom_result, use_container_width=True)
+        except Exception as e:
+            st.error(f"Query error: {e}")
+
+    engine.close()
+
+
 def main():
     render_header()
     catalog, demand = load_data()
 
-    tab1, tab2, tab3, tab4 = st.tabs(["Overview", "Demand Forecast", "Inventory Optimization", "Product Clusters"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "Overview", "Demand Forecast", "Inventory Optimization", "Product Clusters", "SQL Analytics",
+    ])
 
     with tab1:
         render_overview(catalog, demand)
@@ -193,6 +273,8 @@ def main():
         render_optimization_tab(catalog, demand)
     with tab4:
         render_cluster_tab(catalog)
+    with tab5:
+        render_sql_tab()
 
 
 if __name__ == "__main__":

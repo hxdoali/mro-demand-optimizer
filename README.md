@@ -49,6 +49,12 @@ Data Ingestion → ETL Pipeline → Product Clustering → Demand Forecasting �
 
 ![Cost Distribution](docs/screenshots/05_cost_distribution.png)
 
+### Model Comparison (Prophet vs PyTorch LSTM)
+![Model Comparison](docs/screenshots/08_model_comparison.png)
+
+### SQL Analytics (DuckDB)
+![SQL Analytics](docs/screenshots/09_sql_analytics.png)
+
 ### Product Clustering
 ![Product Clusters](docs/screenshots/06_clusters.png)
 
