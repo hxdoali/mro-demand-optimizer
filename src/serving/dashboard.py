@@ -17,8 +17,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from src.etl.ingest import load_pandas
 from src.etl.cluster import cluster_products, get_cluster_embeddings
 from src.models.forecaster import forecast_sku, get_forecast_summary
-from src.models.optimizer import compute_demand_stats, optimize_inventory_lp, optimize_single_sku
-from src.utils.metrics import mape, forecast_summary
+from src.models.optimizer import compute_demand_stats, optimize_inventory_lp
+from src.utils.metrics import forecast_summary
 
 DATA_DIR = "data/synthetic"
 

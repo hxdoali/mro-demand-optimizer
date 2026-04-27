@@ -9,7 +9,7 @@ from pathlib import Path
 import pandas as pd
 
 try:
-    from pyspark.sql import SparkSession, DataFrame as SparkDF
+    from pyspark.sql import SparkSession
     SPARK_AVAILABLE = True
 except ImportError:
     SPARK_AVAILABLE = False

@@ -7,7 +7,6 @@ and optimization recommendations.
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-import pandas as pd
 from pathlib import Path
 import sys
 

@@ -6,7 +6,6 @@ trend and seasonality detection, tuned for MRO demand patterns.
 """
 
 import pandas as pd
-import numpy as np
 from prophet import Prophet
 import logging
 

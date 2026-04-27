@@ -1,8 +1,6 @@
 """Tests for ETL pipeline components."""
 
 import pytest
-import pandas as pd
-import numpy as np
 from src.utils.data_generator import generate_product_catalog, generate_demand_history
 from src.etl.transform import (
     add_calendar_features,

@@ -1,10 +1,8 @@
 """Tests for demand forecasting module."""
 
 import pytest
-import pandas as pd
-import numpy as np
 from src.utils.data_generator import generate_product_catalog, generate_demand_history
-from src.models.forecaster import prepare_prophet_data, get_forecast_summary
+from src.models.forecaster import prepare_prophet_data
 
 
 @pytest.fixture
